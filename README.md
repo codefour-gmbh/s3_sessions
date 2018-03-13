@@ -1,7 +1,7 @@
 # S3Sessions: A S3 Based Backend for CherryPy Sessions
 
 S3Sessions is a substitute for CherryPy's built-in file backed sessions,
-based on the S3Session backend by Taylor Burmeister.
+based on the internal CherryPy FileSession backend.
 
 ## Installation
 
