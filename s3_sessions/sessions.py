@@ -4,6 +4,7 @@ import botocore
 import os
 import io
 import time
+import datetime
 
 import six
 from six.moves import cPickle as pickle
@@ -27,35 +28,15 @@ class S3Session(Session):
         will block indefinitely.
     """
 
+    storage_path = ''
+    lock_timeout = None
+    s3_host = None
+    s3_access_key = None
+    s3_access_secret = None
+
     SESSION_PREFIX = 'session-'
     LOCK_SUFFIX = '.lock'
     pickle_protocol = pickle.HIGHEST_PROTOCOL
-
-    def __init__(self, id=None, **kwargs):
-        # The 'storage_bucket' arg is required for file-based sessions.
-        if 'storage_bucket' not in kwargs:
-            raise KeyError("Missing 'storage_bucket' input in S3Session backend")
-        kwargs.setdefault('storage_path', '')
-        kwargs.setdefault('lock_timeout', None)
-        kwargs.setdefault('s3_host', None)
-        kwargs.setdefault('s3_access_key', None)
-        kwargs.setdefault('s3_access_secret', None)
-
-        Session.__init__(self, id=id, **kwargs)
-
-        # validate self.lock_timeout
-        if isinstance(self.lock_timeout, (int, float)):
-            self.lock_timeout = datetime.timedelta(seconds=self.lock_timeout)
-        if not isinstance(self.lock_timeout, (datetime.timedelta, type(None))):
-            raise ValueError(
-                'Lock timeout must be numeric seconds or a timedelta instance.'
-            )
-
-        # boto3 client vs resource ...
-        self.s3 = boto3.resource('s3', endpoint_url=kwargs['s3_host'],
-                                 aws_access_key_id=kwargs['s3_access_key'],
-                                 aws_secret_access_key=kwargs['s3_access_secret'])
-        self.bucket = self.s3.Bucket(kwargs['storage_bucket'])
 
     @classmethod
     def setup(cls, **kwargs):
@@ -70,6 +51,22 @@ class S3Session(Session):
 
         for k, v in kwargs.items():
             setattr(cls, k, v)
+
+        # validate cls.lock_timeout
+        if isinstance(cls.lock_timeout, (int, float)):
+            cls.lock_timeout = datetime.timedelta(seconds=cls.lock_timeout)
+        if not isinstance(cls.lock_timeout, (datetime.timedelta, type(None))):
+            raise ValueError(
+                'Lock timeout must be numeric seconds or a timedelta instance.'
+            )
+
+        # boto3 client vs resource ...
+        cls.s3 = boto3.resource('s3', endpoint_url=cls.s3_host,
+                                 aws_access_key_id=cls.s3_access_key,
+                                 aws_secret_access_key=cls.s3_access_secret)
+        cls.bucket = cls.s3.Bucket(cls.storage_bucket)
+
+
 
     def _get_file_path(self):
         f = os.path.join(self.storage_path, self.SESSION_PREFIX + self.id)
@@ -138,12 +135,17 @@ class S3Session(Session):
             try:
                 self.s3.Object(self.storage_bucket, path).load()
             except botocore.exceptions.ClientError as e:
-                # explcitly chek for 404 error? e.g. if e.response['Error']['Code'] == "404":
-                time.sleep(0.1)
+                if e.response['Error']['Code'] == "404":
+                    self.lock = path
+                    self.bucket.put_object(Key=path, Body='')
+                    break
+                else:
+                    if self.debug:
+                        cherrypy.log('Error acquiring lock for the session: %s' %
+                                     e, 'TOOLS.SESSIONS')
             else:
-                self.lock = path
-                self.bucket.put_object(Key=path, Body='')
-                break
+                time.sleep(0.1)
+
         self.locked = True
         if self.debug:
             cherrypy.log('Lock acquired.', 'TOOLS.SESSIONS')
@@ -156,7 +158,7 @@ class S3Session(Session):
             #     path = self.lock
             # else:
             #     path += self.LOCK_SUFFIX
-            s3.Object(self.storage_bucket, self.lock).delete()
+            self.s3.Object(self.storage_bucket, self.lock).delete()
         except botocore.exceptions.ClientError as e:
             if self.debug:
                 cherrypy.log('Error releaseing the session lock: %s' %
