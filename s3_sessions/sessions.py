@@ -22,6 +22,9 @@ class S3Session(Session):
     storage_path
         The path inside the s3 bucket where the session will be stored.
         If empty ('' == default), sessions will be stored directly inside the s3 bucket.
+    s3_host
+        The s3 host url in case you are not using AWS.
+        If None (default) boto will connect to it's default S3 provider (AWS).
     lock_timeout
         A timedelta or numeric seconds indicating how long
         to block acquiring a lock. If None (default), acquiring a lock

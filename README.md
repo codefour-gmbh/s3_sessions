@@ -1,7 +1,12 @@
-# S3Sessions: A S3 Based Backend for CherryPy Sessions
+# S3Sessions: S3 Based Backend for CherryPy Sessions
 
 S3Sessions is a substitute for CherryPy's built-in file backed sessions,
 based on the internal CherryPy FileSession backend.
+
+Please note that using S3 for session management can come with performance hits,
+but places the session files in a highly available and persistent location.
+
+Thanks to the developers of [CherryPy](https://github.com/cherrypy/cherrypy) and [LmdbSession](https://github.com/tburmeister/lmdb_sessions).
 
 ## Installation
 
